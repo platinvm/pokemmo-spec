@@ -102,8 +102,8 @@ Initiates the TLS handshake with replay attack protection.
 **Structure:**
 ```c
 struct ClientHello {
-    uint64_t obfuscated_random_key;
-    uint64_t obfuscated_timestamp;
+    int64_t obfuscated_random_key;
+    int64_t obfuscated_timestamp;
 };
 ```
 
@@ -123,11 +123,11 @@ Contains the server's public key, authentication signature, and checksum algorit
 **Structure:**
 ```c
 struct ServerHello {
-    uint16_t public_key_length;
+    int16_t public_key_length;
     uint8_t  server_public_key[public_key_length];
-    uint16_t signature_length;
+    int16_t signature_length;
     uint8_t  ecdsa_signature[signature_length];
-    uint8_t  checksum_size;
+    int8_t  checksum_size;
 };
 ```
 
@@ -144,7 +144,7 @@ Completes the handshake by providing the client's public key.
 **Structure:**
 ```c
 struct ClientReady {
-    uint16_t public_key_length;
+    int16_t public_key_length;
     uint8_t  client_public_key[public_key_length];
 };
 ```
