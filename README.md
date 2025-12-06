@@ -207,3 +207,7 @@ Documentation in progress.
 ### Chat Protocol
 
 Documentation in progress.
+
+
+# References
+- [openmmo](https://github.com/fiereu/openmmo)
