@@ -241,7 +241,7 @@ Client setup is reversed: encrypts with client seed, decrypts with server seed.
 
 ## Checksum Algorithms
 
-Checksums are appended to encrypted packets and then wrapped in a length-prefixed frame (see [Record Protocol](#Record Protocol)). The PokeMMO client supports three checksum modes: NoOp, CRC16 and HMAC-SHA256.
+Checksums are appended to encrypted packets and then wrapped in a length-prefixed frame (see [Record Protocol](#Record_Protocol)). The PokeMMO client supports three checksum modes: NoOp, CRC16 and HMAC-SHA256.
 The server decides which mode to use for this connection and sends this information to the client via the [ServerHello](#ServerHello).
 
 |             | checksum_size      |
