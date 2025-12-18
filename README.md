@@ -182,6 +182,125 @@ Secure phase: encrypted and checksummed
 
 Shared secret is derived using ECDH. Symmetric keys and initialization vectors are derived from the shared secret using triple-hash with SHA-256.
 
+### Seed Values
+
+Client and server seeds are 16-byte values derived from the ECDH shared secret.
+
+Default values (used when _shared secret < 128 bits_):
+- Client seed: `0x3f18f16272074418f46d919742a0fec9`
+- Server seed: `0x1f9a803c99260a8b97ce0274ad3927b4`
+
+If _shared secret >= 128 bits_, seeds are derived using triple-hash:
+- Client seed: `triple-hash(shared_secret, "KeySalt" + 0x01)`
+- Server seed: `triple-hash(shared_secret, "KeySalt" + 0x02)`
+
+Triple-hash function:
+```c
+void triple_hash(unsigned char *output, 
+                 const unsigned char *data1, size_t data1_len,
+                 const unsigned char *data2, size_t data2_len) {
+    SHA256_CTX ctx;
+    unsigned char digest[32];
+    
+    SHA256_Init(&ctx);
+    SHA256_Update(&ctx, data2, data2_len);
+    SHA256_Update(&ctx, data1, data1_len);
+    SHA256_Update(&ctx, data2, data2_len);
+    SHA256_Final(digest, &ctx);
+    
+    memcpy(output, digest, 16);  // Use first 16 bytes
+}
+```
+
+Note: Client uses server seed for incoming checksums, server uses client seed 
+for incoming checksums (opposite of encryption key usage).
+
+### Cipher Initialization
+
+AES-128-CTR is used for encryption. Each endpoint maintains two cipher instances:
+- Encryption cipher: uses own seed as key
+- Decryption cipher: uses peer's seed as key
+
+The IV for both ciphers is derived from the key using:
+- `IV = triple-hash(seed, "IVDERIV")`
+
+Example cipher setup (server perspective):
+```c
+// Encryption (outgoing): uses server seed
+unsigned char encrypt_iv[16];
+triple_hash(encrypt_iv, server_seed, 16, "IVDERIV", 7);
+AES_CTR_init(&encrypt_cipher, server_seed, encrypt_iv);
+
+// Decryption (incoming): uses client seed
+unsigned char decrypt_iv[16];
+triple_hash(decrypt_iv, client_seed, 16, "IVDERIV", 7);
+AES_CTR_init(&decrypt_cipher, client_seed, decrypt_iv);
+```
+
+Client setup is reversed: encrypts with client seed, decrypts with server seed.
+
+## Checksum Algorithms
+
+Checksums are appended to encrypted packets and then wrapped in a length-prefixed frame (see [Record Protocol](#Record Protocol)). The PokeMMO client supports three checksum modes: NoOp, CRC16 and HMAC-SHA256.
+The server decides which mode to use for this connection and sends this information to the client via the [ServerHello](#ServerHello).
+
+|             | checksum_size      |
+|-------------|--------------------|
+| NoOp        | 0                  |
+| CRC16       | 2                  |
+| HMAC-SHA256 | 4-32 (default: 16) |
+
+### CRC16
+
+The CRC16 version used by PokeMMO matches the [CRC/ARC](https://reveng.sourceforge.io/crc-catalogue/16.htm) definition.
+
+### HMAC-SHA256
+
+This implementation uses HMAC-SHA256 with an incrementing round counter to 
+authenticate messages. The checksum size can be configured between 4-32 bytes.
+
+#### Initialization
+
+Each endpoint maintains two checksum instances:
+- Incoming: initialized with the peer's seed (client uses server seed, server uses client seed)
+- Outgoing: initialized with own seed (client uses client seed, server uses server seed)
+see [Seed Values](#Seed_Values).
+
+Both instances start with _round counter = 0_.
+
+#### Calculate
+
+To generate a checksum for outgoing data:
+
+1. Update HMAC with message bytes
+2. Update HMAC with current round counter (4-byte big-endian integer)
+3. Increment round counter
+4. Finalize HMAC and truncate to configured size
+
+Example in C:
+```c
+unsigned char round_bytes[4];
+round_bytes[0] = (round >> 24) & 0xFF;
+round_bytes[1] = (round >> 16) & 0xFF;
+round_bytes[2] = (round >> 8) & 0xFF;
+round_bytes[3] = round & 0xFF;
+
+hmac_update(mac, message, message_len);
+hmac_update(mac, round_bytes, 4);
+round++;
+hmac_final(mac, digest);
+memcpy(checksum, digest, checksum_size);
+```
+
+#### Verify
+
+To verify incoming data:
+
+1. Update HMAC with message bytes
+2. Update HMAC with current round counter (4-byte big-endian)
+3. Increment round counter
+4. Finalize HMAC, truncate, and compare with provided checksum
+
 ## Record Protocol
 
 All packets are prefixed with a length field.
